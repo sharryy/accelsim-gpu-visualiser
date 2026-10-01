@@ -1,5 +1,7 @@
 # Accel-Sim GPU Visualiser
 
+**Live demo: https://sharryy.github.io/accelsim-gpu-visualiser/**
+
 An interactive, single-page visualisation of a multi-chiplet GPU as modelled by
 [Accel-Sim](https://github.com/accel-sim/accel-sim-framework) / GPGPU-Sim.
 
@@ -22,7 +24,8 @@ spread across config files, logs and C++ code.
 
 ## Usage
 
-Open `index.html` in a browser. No build step or dependencies.
+Open the [live demo](https://sharryy.github.io/accelsim-gpu-visualiser/), or
+open `index.html` locally in a browser. No build step or dependencies.
 
 It is a teaching tool, not a performance model: latencies are simplified, so
 always confirm against a real simulator run.
