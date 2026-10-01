@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Multi-chiplet GPU simulator explorer</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#f3f4f8; --panel:#ffffff; --panel2:#eceef5; --line:#d4d8e4; --text:#1c2130; --muted:#5e6678;
+  --ok:#1f9d55; --okbg:#e3f6ea; --bad:#d23a4a; --badbg:#fde6e8;
+  --local:#1483c7; --remote:#e07b1a; --accent:#5b4bd6; --wire:#9aa2b8; --busy:#ffd36b;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1118; --panel:#161a24; --panel2:#1f2432; --line:#2b3140; --text:#e7eaf2; --muted:#98a1b5;
+    --ok:#3ddc84; --okbg:#10301f; --bad:#ff5c6a; --badbg:#3a1a1f;
+    --local:#4cc9f0; --remote:#ffa047; --accent:#a99cff; --wire:#4c5468; --busy:#ffd36b;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1118; --panel:#161a24; --panel2:#1f2432; --line:#2b3140; --text:#e7eaf2; --muted:#98a1b5;
+  --ok:#3ddc84; --okbg:#10301f; --bad:#ff5c6a; --badbg:#3a1a1f;
+  --local:#4cc9f0; --remote:#ffa047; --accent:#a99cff; --wire:#4c5468; --busy:#ffd36b;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15px;line-height:1.4}
+header{padding:18px 22px 6px}
+h1{font-size:22px;margin:0 0 4px;font-weight:700}
+h2{font-size:15px;margin:0 0 2px;font-weight:700}
+.hint{color:var(--muted);font-size:13px;margin:0 0 10px}
+.panel .hint{display:none}
+.panel.show .hint{display:block}
+h2{display:flex;align-items:center;gap:8px}
+.eye{background:none;border:1px solid var(--line);border-radius:50%;width:22px;height:22px;padding:0;font-size:12px;line-height:1;color:var(--muted);cursor:pointer;flex:none}
+.panel.show .eye{color:var(--accent);border-color:var(--accent)}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;padding:0 22px 14px}
+@media (max-width:1050px){.layout{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:14px}
+.toolbar{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;padding:10px 22px 12px}
+.toolbar label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.toolbar input[type=range]{width:120px;accent-color:var(--accent)}
+.toolbar output{color:var(--text);min-width:52px;font-variant-numeric:tabular-nums}
+button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font:inherit;font-size:14px;cursor:pointer}
+button.primary{background:var(--accent);color:#fff;border-color:transparent}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:5px 11px}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+svg{display:block;max-width:100%}
+#gpuwrap{overflow-x:auto}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted);margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:50%;display:inline-block}
+.counters{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:10px}
+.counter{background:var(--panel2);border-radius:6px;padding:8px 10px}
+.counter{min-height:62px}
+.counter b{display:block;font-size:20px;font-variant-numeric:tabular-nums;line-height:1.1;white-space:nowrap}
+.counter span{font-size:12px;color:var(--muted)}
+.counter.local b{color:var(--local)} .counter.remote b{color:var(--remote)}
+.clocks{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px}
+@media (max-width:700px){.clocks{grid-template-columns:repeat(2,1fr)}}
+.clock{background:var(--panel2);border-radius:6px;padding:8px 10px;border-left:4px solid var(--line);transition:background .12s;min-height:92px}
+.clock small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.clock.hit{background:color-mix(in srgb,var(--busy) 25%,var(--panel2))}
+.clock b{font-size:16px;font-variant-numeric:tabular-nums}
+.clock small{display:block;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.cfg{display:grid;grid-template-columns:1fr 92px;gap:6px 10px;align-items:center;font-size:13px}
+.cfg .grp{grid-column:1/-1;margin-top:8px;color:var(--muted);font-weight:600;border-bottom:1px solid var(--line);padding-bottom:2px}
+.cfg code{font-size:12px;color:var(--text)}
+.cfg input{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:4px 6px;font:inherit;font-variant-numeric:tabular-nums}
+.rules{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+.rule{border-radius:6px;padding:7px 10px;font-size:13px;border-left:4px solid}
+.rule.ok{background:var(--okbg);border-color:var(--ok)} .rule.bad{background:var(--badbg);border-color:var(--bad)}
+.rule b{display:block} .rule span{color:var(--muted)}
+.verdict{margin-top:12px;padding:10px;border-radius:6px;font-weight:700;text-align:center;font-size:15px}
+.verdict.ok{background:var(--okbg);color:var(--ok)} .verdict.bad{background:var(--badbg);color:var(--bad)}
+.derived{margin-top:12px;font-size:13px;display:grid;grid-template-columns:1fr auto;gap:3px 12px}
+.derived b{font-variant-numeric:tabular-nums;text-align:right}
+.gotchas{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;padding:0 22px}
+.gotcha{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:13px}
+.gotcha h3{font-size:14px;margin:0 0 4px}
+.gotcha code{background:var(--panel2);padding:1px 4px;border-radius:3px;font-size:12px}
+footer{padding:14px 22px 30px;color:var(--muted);font-size:12px;max-width:900px}
+table.lab{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+table.lab th,table.lab td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--line)}
+table.lab th{color:var(--muted);font-weight:600}
+table.lab td.n,table.lab th.n{text-align:right}
+table.lab tr.pend td{color:var(--muted);opacity:.6}
+table.lab tr.now td{opacity:1;color:var(--text);background:color-mix(in srgb,var(--busy) 18%,transparent)}
+table.lab tr.tot td{font-weight:700;border-top:2px solid var(--line)}
+#tip{position:fixed;z-index:10;max-width:300px;background:var(--panel);border:1px solid var(--accent);border-radius:8px;padding:10px 12px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.25);display:none}
+#tip h4{margin:0 0 3px;font-size:14px} #tip code{display:block;color:var(--accent);font-size:12px;margin-bottom:4px}
+#tip button{float:right;padding:0 6px;font-size:12px;margin-left:8px}
+/* svg classes */
+.comp{cursor:pointer}
+.comp rect{transition:fill .1s}
+.comp.busy rect{fill:var(--busy)!important;stroke:var(--busy)}
+.lbl{font-size:10px;fill:var(--muted);pointer-events:none}
+.lbl2{font-size:11px;fill:var(--text);font-weight:600;pointer-events:none}
+.wire{stroke:var(--wire);stroke-width:1.5;fill:none}
+.wire.x{stroke-width:2.5;stroke-dasharray:6 4}
+.port{fill:var(--accent)} .sock{fill:none;stroke:var(--wire);stroke-width:1.5}
+#gpu.dim > :not(.focus){opacity:.22}
+#gpu.dim > .focus{opacity:1}
+.focus .port,.focus circle.port{fill:#5dfcff;r:4;filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 7px #5dfcff) drop-shadow(0 0 14px #5dfcff)}
+.focus .sock{fill:#ffb3fd;stroke:#ffb3fd;filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 8px #ff6cf8)}
+.focus .bar{stroke:#5dfcff;stroke-width:3;filter:drop-shadow(0 0 4px #5dfcff) drop-shadow(0 0 12px #5dfcff)}
+.focus .pid{fill:#5dfcff;font-size:9px;font-weight:700;filter:drop-shadow(0 0 3px #000)}
+.focusbar{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 2px;align-items:center;font-size:13px;color:var(--muted)}
+.focusbar button{padding:4px 10px;font-size:13px}
+.focusbar button.on{background:#5dfcff;color:#03212a;border-color:transparent}
+.pid{display:none;font-size:7px;fill:var(--accent);pointer-events:none}
+.focus .pid{display:block}
+@media (prefers-reduced-motion:reduce){.glow{filter:none}}
+@media (prefers-reduced-motion:reduce){.clock{transition:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Multi-chiplet GPU simulator explorer</h1>
+  <p class="hint">How requests travel inside and between chiplets, and which configs crash the simulator. Click any component for its code name. Toggle the eye icons for explanations.</p>
+</header>
+
+<div class="toolbar">
+  <button id="play" class="primary">Play</button>
+  <button id="stepBtn" title="Advance one simulator step: the earliest next tick among all clock domains">Single step</button>
+  <button id="reset">Reset counters</button>
+  <button id="eyeAll" title="Show or hide all explanations">👁 explanations</button>
+  <label>Speed <input type="range" id="speed" min="0" max="100" value="55"><output id="speedOut"></output></label>
+  <label>Traffic rate <input type="range" id="rate" min="0" max="100" value="40"><output id="rateOut"></output></label>
+  <label>% remote <input type="range" id="remote" min="0" max="100" value="30"><output id="remoteOut"></output></label>
+</div>
+
+<div class="layout">
+<div class="left">
+  <section class="panel">
+    <h2>Single-request lab: one request, every hop counted</h2>
+    <p class="hint">Sends one request from SM 0 / cluster 0 on chiplet 0 and lists every hop: ticks in its own clock domain and the time that costs. Hop lengths are teaching values; the clock arithmetic is real.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <button class="primary" data-lab="local-hit">Local, L2 hit</button>
+      <button class="primary" data-lab="local-miss">Local, L2 miss</button>
+      <button class="primary" data-lab="remote-hit">Remote, L2 hit</button>
+      <button class="primary" data-lab="remote-miss">Remote, L2 miss</button>
+      <button id="labExit" style="display:none">Back to normal traffic</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>The GPU: chiplets, SMs, L2 slices, DRAM channels</h2>
+    <p class="hint">SM → cluster port → intra network → home L2 slice (→ DRAM on a miss) → back. A remote request crosses the chiplet network twice even on an L2 hit, because the L2 is memory-side.</p>
+    <div class="focusbar" id="focusbar"></div>
+    <div id="gpuwrap"><svg id="gpu"></svg></div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--local)"></i>local request</span>
+      <span><i class="sw" style="background:var(--remote)"></i>remote request</span>
+      <span><i class="sw" style="background:transparent;border:2px solid var(--local)"></i>reply (hollow)</span>
+      <span><i class="sw" style="background:var(--busy);border-radius:2px"></i>unit busy with a request</span>
+      <span><i class="sw" style="background:var(--accent);width:8px;height:8px"></i>network port + node id</span>
+      <span><i class="sw" style="border:1.5px solid var(--wire);border-radius:2px;width:9px;height:8px"></i>slice→DRAM link, no port</span>
+      <span><i class="sw" style="background:var(--local);opacity:.75;border-radius:2px"></i>SM inside its cluster</span>
+    </div>
+    <div class="counters" id="counters"></div>
+  </section>
+  <section class="panel" id="labPanel" style="display:none">
+    <h2>Single-request trace</h2>
+    <div id="labOut" style="font-size:13px;color:var(--muted)">Pick one above.</div>
+    <div id="labCompareWrap" style="display:none"><h2 style="margin-top:14px">Comparison of the runs so far</h2>
+    <div id="labCompare"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2 class="comp" data-tip="loop" style="cursor:pointer">Clock domains (click for the main loop)</h2>
+    <p class="hint">No global clock: each domain keeps its next-tick time; one step jumps to the earliest and ticks only the domains due then. <code>gpu_sim_cycle</code> counts core ticks only.</p>
+    <div class="clocks" id="clockCards"></div>
+    <svg id="timeline" viewBox="0 0 700 120" preserveAspectRatio="none" style="width:100%;height:120px"></svg>
+    <p class="hint" style="margin:6px 0 0;min-height:2.8em" id="tlNote"></p>
+  </section>
+
+</div>
+
+<aside class="right">
+  <section class="panel">
+    <h2>Config playground</h2>
+    <p class="hint">Edit, the diagram redraws and the rules re-check. All green = structurally safe to run.</p>
+    <div class="cfg" id="cfg"></div>
+    <div style="margin-top:8px;display:flex;gap:8px"><button id="defaults">Restore defaults</button></div>
+    <div class="verdict" id="verdict"></div>
+    <div class="rules" id="rules"></div>
+    <h2 style="margin-top:14px">Derived values</h2>
+    <div class="derived" id="derived"></div>
+  </section>
+</aside>
+</div>
+
+
+<footer>Teaching tool, not a performance model: hop latencies are a few ticks (real config: hundreds), hit rate fixed at 60%, traffic random. Placement, clock stepping and the five checks follow the code. Still confirm in the real log's config dump and check <code>gpu_sim_insn</code> stays at 4,086,966.</footer>
+
+<div id="tip" role="dialog"></div>
+
+<script>
+(function(){
+'use strict';
+const DEF={n_chiplets:4,n_clusters:32,cores:1,n_mem:16,subp:2,f_core:1132,f_icnt:1132,f_xbar:3515,f_l2:1132,f_dram:4000,k_intra:64,k_inter:4,topo:'fly',n_inter:1};
+const CFG_FIELDS=[
+ ['grp','Topology'],
+ ['n_chiplets','gpgpu_n_chiplets','number of chiplets'],
+ ['n_clusters','gpgpu_n_clusters','clusters (network ports for SMs)'],
+ ['cores','gpgpu_n_cores_per_cluster','SMs inside one cluster'],
+ ['n_mem','gpgpu_n_mem','DRAM channels'],
+ ['subp','gpgpu_n_sub_partition_per_mchannel','L2 slices per DRAM channel'],
+ ['grp','Clocks, MHz (-gpgpu_clock_domains core:icnt:chiplet:L2:DRAM)'],
+ ['f_core','core','SM clock'],['f_icnt','intra-chiplet net','icnt'],['f_xbar','inter-chiplet net','icnt_chLet'],['f_l2','L2','L2 cache'],['f_dram','DRAM','memory'],
+ ['grp','Network sizes'],
+ ['k_intra','k in config_ampere_islip.icnt','intra-chiplet nodes'],
+ ['k_inter','k in config_ampere_islip_ch.icnt','inter-chiplet: nodes per dimension'],
+ ['n_inter','n in config_ampere_islip_ch.icnt','inter-chiplet: dimensions (nodes = k^n)'],
+ ['sel','topo','topology in config_ampere_islip_ch.icnt','fly = crossbar when n=1; torus n=1 = ring',['fly','mesh','torus']],
+];
+const DOMS=[
+ {key:'core',label:'Core (SM)',f:'f_core'},
+ {key:'icnt',label:'Intra-chiplet net',f:'f_icnt'},
+ {key:'xbar',label:'Inter-chiplet net',f:'f_xbar'},
+ {key:'l2',label:'L2',f:'f_l2'},
+ {key:'dram',label:'DRAM',f:'f_dram'}];
+const TIPS={
+ sm:{t:'SM (streaming multiprocessor)',c:'shader_core_ctx',d:'Runs warps and issues loads/stores. A cluster holds n_cores_per_cluster of these in an array; they all share the cluster\'s single network port, so adding SMs per cluster adds compute but no network nodes.'},
+ cluster:{t:'Cluster',c:'simt_core_cluster',d:'Owns one port on the intra network (icnt_create(n_simt_clusters, n_mem_sub_partitions)). Its SMs share it. chiplet_id = cluster_id / (n_clusters / n_chiplets), integer division. Changing n_clusters changes k_intra; changing cores_per_cluster does not.'},
+ slice:{t:'L2 cache slice (sub-partition)',c:'memory_sub_partition / l2_cache',d:'128 KB. Memory-side: it only caches addresses whose home is its own DRAM channel, so a request must travel to the home slice even for a hit. Has its own network port.'},
+ dram:{t:'DRAM channel',c:'memory_partition_unit / dram_t',d:'One memory channel behind sub_partitions_per_channel L2 slices (2 by default). Accessed only on an L2 miss. dram_latency is counted in DRAM ticks.'},
+ icnt:{t:'Intra network: one object for the whole GPU',c:'icnt (config_ampere_islip.icnt)',d:'The code builds a single network with one port per cluster plus one per L2 slice across ALL chiplets: k = n_clusters + n_mem × sub_partitions, GPU-wide totals. Each chiplet bar here is that chiplet\'s share of the ports; the dotted link between bars means "same object", no traffic flows on it (remote traffic uses icnt_chLet). Too small = segfault when a missing node sends.'},
+ xbar:{t:'Inter-chiplet network (crossbar)',c:'icnt_chLet (config_ampere_islip_ch.icnt)',d:'Connects the chiplets. k must equal n_chiplets; too small = segfault on the first remote packet. Clocked separately (3515 MHz by default). Every remote request crosses it twice: request and reply.'},
+ dlink:{t:'L2 slice ↔ DRAM link (not a network port)',c:'memory_sub_partition → memory_partition_unit → dram_t',d:'A slice hands misses straight to its partition\'s DRAM through internal queues; no BookSim port, no node id, no arbitration. That is why DRAM channels do not count toward k_intra, only slices do.'},
+ router:{t:'Chiplet router (BookSim node of icnt_chLet)',c:'icnt_chLet node, routed by BookSim (mesh/torus: dimension-order routing)',d:'In a mesh or ring the packet hops router to router; each link crossed costs extra inter-chiplet-network cycles. The crossbar reaches any chiplet in one hop but its cost grows with the square of the port count. Whether this research fork\'s chiplet code actually supports a non-crossbar topology must be checked in icnt_create_chLet; this page shows the BookSim concept.'},
+ port:{t:'Network port (BookSim node)',c:'icnt_push(src, dst, ...) / icnt_pop(node)',d:'One injection queue + one ejection queue + an id 0..k-1. Clusters use their cluster id; slices use n_clusters + slice id. It glows when a packet enters or leaves through it. k must cover the highest id in use.'},
+ loop:{t:'Main simulation loop',c:'gpgpu_sim::cycle()',d:'Each step finds the earliest "next tick" among the 5 clock domains, advances time to it, and cycles only the domains due then. Each ticked domain sets next = now + 1/frequency.'}
+};
+const HIT_RATE=0.6, MAX_INFLIGHT=48;
+let cfg={...DEF};
+const ui={rate:0.4,remote:0.3,speed:40,playing:false};
+let L=null, sim=null;
+const $=id=>document.getElementById(id);
+
+/* ---------- config panel ---------- */
+function buildCfgPanel(){
+ const host=$('cfg'); host.innerHTML='';
+ for(const f of CFG_FIELDS){
+  if(f[0]==='grp'){const g=document.createElement('div');g.className='grp';g.textContent=f[1];host.appendChild(g);continue;}
+  if(f[0]==='sel'){const lab=document.createElement('label');lab.innerHTML=`<code>${f[2]}</code><br><span style="color:var(--muted)">${f[3]}</span>`;const sel=document.createElement('select');sel.id='in_'+f[1];sel.style.cssText='width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:4px';for(const o of f[4]){const op=document.createElement('option');op.value=o;op.textContent=o;sel.appendChild(op);}sel.value=cfg[f[1]];sel.addEventListener('change',()=>{cfg[f[1]]=sel.value;onCfgChange();});host.appendChild(lab);host.appendChild(sel);continue;}
+  const lab=document.createElement('label');lab.htmlFor='in_'+f[0];lab.innerHTML=`<code>${f[1]}</code><br><span style="color:var(--muted)">${f[2]}</span>`;
+  const inp=document.createElement('input');inp.type='number';inp.id='in_'+f[0];inp.min=f[0].startsWith('f_')?1:1;inp.value=cfg[f[0]];
+  inp.addEventListener('input',()=>{const v=parseFloat(inp.value);cfg[f[0]]=Number.isFinite(v)?v:NaN;onCfgChange();});
+  host.appendChild(lab);host.appendChild(inp);
+ }
+}
+function num(v){return Number.isFinite(v)&&v>0?Math.floor(v):NaN;}
+function validate(c){
+ const r=[];
+ const nc=num(c.n_chiplets),ncl=num(c.n_clusters),nm=num(c.n_mem),sp=num(c.subp);
+ const ok1=nc&&ncl&&ncl%nc===0;
+ r.push({ok:ok1,title:'1. n_clusters divisible by n_chiplets',msg:ok1?`${ncl} / ${nc} = ${ncl/nc} clusters per chiplet.`:`chiplet_id = cluster_id / (${ncl||'?'} / ${nc||'?'}) with integer division. Remainder ${ncl&&nc?ncl%nc:'?'} means the last clusters get a chiplet id that does not exist: crash or silently wrong placement.`});
+ const ok2=nc&&nm&&nm%nc===0;
+ r.push({ok:ok2,title:'2. n_mem divisible by n_chiplets',msg:ok2?`drams_per_chiplet = ${nm} / ${nc} = ${nm/nc}.`:`drams_per_chiplet = ${nm||'?'} / ${nc||'?'} is not whole; some DRAM channels have no chiplet or a chiplet has none.`});
+ const need=(ncl&&nm&&sp)?ncl+nm*sp:NaN, ki=num(c.k_intra);
+ const ok3=Number.isFinite(need)&&ki===need;
+ r.push({ok:ok3,title:'3. Intra-network k = n_clusters + n_mem × sub_partitions (GPU-wide)',msg:ok3?`k = ${ncl} + ${nm}×${sp} = ${need}: one network object for the whole GPU, one port per cluster and per L2 slice (SMs inside a cluster share its port).`:`Needs ${need||'?'} nodes (${ncl||'?'} clusters + ${nm||'?'}×${sp||'?'} slices) but k = ${ki||'?'}. ${ki<need?'Too small: segmentation fault when the extra nodes send packets.':'Too large: unused ports, results not comparable.'}`});
+ const ke=num(c.k_inter), ni=num(c.n_inter), nodes=(ke&&ni)?Math.pow(ke,ni):NaN; const ok4=nc&&nodes===nc;
+ r.push({ok:ok4,title:'4. Inter-chiplet network nodes k^n = n_chiplets',msg:ok4?`${c.topo}: k=${ke}, n=${ni} → ${nodes} nodes, one per chiplet.`:`${c.topo}: k=${ke||'?'}, n=${ni||'?'} → ${nodes||'?'} nodes but there are ${nc||'?'} chiplets. ${nodes<nc?'Too small: segmentation fault on the first remote packet.':'Too large: extra idle ports.'} (crossbar for 4 chiplets: k=4,n=1; 2×2 mesh: k=2,n=2)`});
+ const fs=['f_core','f_icnt','f_xbar','f_l2','f_dram'].map(k=>c[k]);
+ const ok5=fs.every(v=>Number.isFinite(v)&&v>0);
+ r.push({ok:ok5,title:'5. All 5 clocks present, in order, > 0',msg:ok5?`-gpgpu_clock_domains ${fs.join(':')} (core:icnt:chiplet:L2:DRAM). period = 1/frequency.`:'A missing, zero or negative frequency gives a period of 1/0 or a shifted field order: wrong domain speeds or a hang.'});
+ return r;
+}
+function stepsPerCoreCycle(c){
+ const fc=c.f_core; if(!(fc>0))return NaN;
+ const seen=new Set(); let s=0;
+ for(const d of DOMS){const f=c[d.f]; if(!(f>0)||seen.has(f))continue; seen.add(f); s+=f/fc;}
+ return s;
+}
+function renderValidation(){
+ const rules=validate(cfg); const all=rules.every(x=>x.ok);
+ $('rules').innerHTML=rules.map(x=>`<div class="rule ${x.ok?'ok':'bad'}"><b>${x.ok?'OK':'WILL CRASH / WRONG RESULTS'} · ${x.title}</b><span>${x.msg}</span></div>`).join('');
+ const v=$('verdict'); v.className='verdict '+(all?'ok':'bad'); v.textContent=all?'OK: this configuration is structurally consistent':'Not safe: fix the red rules before running';
+ const nc=num(cfg.n_chiplets)||NaN, ncl=num(cfg.n_clusters), nm=num(cfg.n_mem), sp=num(cfg.subp), co=num(cfg.cores);
+ const smsPer=(ncl/nc)*co, slPer=(nm/nc)*sp, drPer=nm/nc, l2kb=nm*sp*128, spc=stepsPerCoreCycle(cfg);
+ const fmt=x=>Number.isFinite(x)?(Number.isInteger(x)?x:x.toFixed(2)):'?';
+ $('derived').innerHTML=[['Clusters per chiplet',fmt(ncl/nc)],['SMs per chiplet (clusters × cores)',fmt(smsPer)],['Intra-network ports needed (GPU-wide)',fmt(ncl+nm*sp)],['L2 slices per chiplet',fmt(slPer)],['DRAM channels per chiplet',fmt(drPer)],['Total L2 size',Number.isFinite(l2kb)?(l2kb>=1024?(l2kb/1024)+' MB':l2kb+' KB'):'?'],['Simulator steps per core cycle',fmt(spc)],['DRAM ticks per core cycle',fmt(cfg.f_dram/cfg.f_core)],['Chiplet-net ticks per core cycle',fmt(cfg.f_xbar/cfg.f_core)]].map(([k,v])=>`<span>${k}</span><b>${v}</b>`).join('');
+ return all;
+}
+let cfgTimer=null;
+function onCfgChange(){renderValidation(); clearTimeout(cfgTimer); cfgTimer=setTimeout(rebuild,250);}
+
+/* ---------- layout ---------- */
+function chipColor(i,n){return `hsl(${(200+i*360/Math.max(n,1))%360} 60% 58%)`;}
+function topoKind(c){const t=c.topo,n=num(c.n_inter)||1; if(t==='fly')return 'xbar'; if(t==='torus')return n===1?'ring':'torus'; if(t==='mesh')return n===1?'line':'mesh'; return 'xbar';}
+function interRoute(src,dst){ // chiplet ids visited, src..dst
+ if(L.topo==='xbar')return [src,dst];
+ const adj=id=>L.links.filter(l=>l.a===id||l.b===id).map(l=>l.a===id?l.b:l.a);
+ // BFS shortest path (dimension-order would differ only for ties)
+ const prev={[src]:null}, q=[src];
+ while(q.length){const u=q.shift(); if(u===dst)break; for(const v of adj(u))if(!(v in prev)){prev[v]=u;q.push(v);}}
+ if(!(dst in prev))return [src,dst];
+ const path=[]; for(let v=dst;v!==null;v=prev[v])path.unshift(v); return path;
+}
+function layout(c){
+ const n=Math.min(16,Math.max(1,num(c.n_chiplets)||1));
+ const clPer=Math.min(32,Math.max(1,Math.floor((num(c.n_clusters)||1)/n)));
+ const cores=Math.min(4,Math.max(1,num(c.cores)||1));
+ const smsPer=clPer*cores;
+ const dramsPer=Math.min(16,Math.max(1,Math.floor((num(c.n_mem)||1)/n)));
+ const sp=Math.min(4,Math.max(1,num(c.subp)||1));
+ const slicesPer=dramsPer*sp;
+ const cell=24,pad=16, clCell=Math.max(26,cores*12+10);
+ const inner=Math.max(clPer*clCell,slicesPer*cell,7*cell);
+ const W=inner+pad*2,H=214;
+ const gcols=Math.ceil(Math.sqrt(n)),grows=Math.ceil(n/gcols);
+ const gap=n>1?120:0;
+ const chips=[];
+ for(let i=0;i<n;i++){
+  const col=i%gcols,row=Math.floor(i/gcols);
+  const x=20+col*(W+gap),y=20+row*(H+gap);
+  const sx=x+pad+(inner-clPer*clCell)/2, lx=x+pad+(inner-slicesPer*cell)/2;
+  const clusters=[],slices=[],drams=[];
+  for(let j=0;j<clPer;j++){const cx=sx+j*clCell+clCell/2, cy=y+54; const sms=[];
+   for(let k=0;k<cores;k++)sms.push({x:cx-(cores-1)*6+k*12,y:cy-2});
+   clusters.push({x:cx,y:cy,w:clCell-6,sms,port:{x:cx,y:cy+12},gid:i*clPer+j});}
+  for(let j=0;j<slicesPer;j++){const cx=lx+j*cell+cell/2;slices.push({x:cx,y:y+144,port:{x:cx,y:y+135},sock:{x:cx,y:y+156},gid:i*slicesPer+j});}
+  for(let j=0;j<dramsPer;j++)drams.push({x:lx+j*cell*sp+cell*sp/2,y:y+192,w:cell*sp-6});
+  chips.push({id:i,x,y,W,H,color:chipColor(i,n),clusters,slices,drams,icnt:{x:x+W/2,y:y+100,x1:x+pad,x2:x+W-pad},sp});
+ }
+ const topo=topoKind(c);
+ const extra=topo==='xbar'?0:70;
+ const totalW=gcols*W+(gcols-1)*gap+40+extra, totalH=grows*H+(grows-1)*gap+60+extra;
+ const xbar={x:20+(gcols*W+(gcols-1)*gap)/2,y:20+(grows*H+(grows-1)*gap)/2};
+ for(const ch of chips){
+  const px=Math.max(ch.x,Math.min(xbar.x,ch.x+ch.W)), py=Math.max(ch.y,Math.min(xbar.y,ch.y+ch.H));
+  ch.port={x:px,y:py}; ch.endX=xbar.x>=ch.icnt.x?ch.icnt.x2:ch.icnt.x1;
+ }
+ for(const ch of chips){ch.rt={x:ch.x+ch.W+36,y:ch.y+ch.H+36}; ch.gw=topo==='xbar'?ch.port:ch.rt; ch.col=ch.id%gcols; ch.row=Math.floor(ch.id/gcols);}
+ const links=[]; const addL=(a,b,wrap)=>{if(a!==b&&!links.some(l=>(l.a===a&&l.b===b)||(l.a===b&&l.b===a)))links.push({a,b,wrap:!!wrap});};
+ const order=[]; for(let r=0;r<grows;r++){const row=[];for(let cc=0;cc<gcols;cc++){const id=r*gcols+cc;if(id<n)row.push(id);} if(r%2)row.reverse(); order.push(...row);}
+ if(topo==='ring'||topo==='line'){for(let i=1;i<order.length;i++)addL(order[i-1],order[i]); if(topo==='ring'&&n>2)addL(order[order.length-1],order[0],true);}
+ if(topo==='mesh'||topo==='torus'){for(const ch of chips){const rgt=chips.find(o=>o.row===ch.row&&o.col===ch.col+1), dn=chips.find(o=>o.col===ch.col&&o.row===ch.row+1); if(rgt)addL(ch.id,rgt.id); if(dn)addL(ch.id,dn.id);}
+  if(topo==='torus'){for(const ch of chips){const first=chips.find(o=>o.row===ch.row&&o.col===0), last=[...chips].reverse().find(o=>o.row===ch.row); if(ch===last&&first&&first!==last)addL(last.id,first.id,true); const top=chips.find(o=>o.col===ch.col&&o.row===0), bot=[...chips].reverse().find(o=>o.col===ch.col); if(ch===bot&&top&&top!==bot)addL(bot.id,top.id,true);}}}
+ return {n,clPer,cores,smsPer,slicesPer,dramsPer,sp,chips,xbar,totalW,totalH,nClTot:n*clPer,topo,gcols,grows,order,links};
+}
+function drawGPU(){
+ const s=$('gpu'); s.setAttribute('viewBox',`0 0 ${L.totalW} ${L.totalH}`); s.style.width=Math.min(L.totalW,1400)+'px'; s.style.height='auto';
+ let h='';
+ if(L.n>1){
+  // dotted "same object" links between the per-chiplet shares of the one intra network
+  for(let i=1;i<L.chips.length;i++){const a=L.chips[i-1].icnt,b=L.chips[i].icnt;h+=`<path d="M${a.x},${a.y} L${b.x},${b.y}" stroke="var(--accent)" stroke-width="1" stroke-dasharray="2 5" fill="none" opacity=".45"/>`;}
+  if(L.topo==='xbar'){
+   for(const ch of L.chips)h+=`<path class="wire x" d="M${ch.endX},${ch.icnt.y} L${ch.port.x},${ch.port.y} L${L.xbar.x},${L.xbar.y}"/>`;
+  }else{
+   for(const ch of L.chips)h+=`<path class="wire x" d="M${ch.endX},${ch.icnt.y} L${ch.rt.x},${ch.rt.y}"/>`;
+   for(const l of L.links){const a=L.chips[l.a].rt,b=L.chips[l.b].rt;
+    if(l.wrap){const mx=(a.x+b.x)/2,my=(a.y+b.y)/2,dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy)||1,nx=-dy/len*60,ny=dx/len*60;h+=`<path class="wire x inter" d="M${a.x},${a.y} Q${mx+nx},${my+ny} ${b.x},${b.y}" stroke="var(--accent)" opacity=".7"/>`;}
+    else h+=`<path class="wire x inter" d="M${a.x},${a.y} L${b.x},${b.y}" stroke="var(--accent)"/>`;}
+   for(const ch of L.chips)h+=`<g class="comp inter" data-tip="router"><circle class="bar" id="rt_${ch.id}" cx="${ch.rt.x}" cy="${ch.rt.y}" r="11" fill="var(--panel2)" stroke="var(--accent)" stroke-width="2"/><text class="lbl2" x="${ch.rt.x}" y="${ch.rt.y+4}" text-anchor="middle" style="font-size:9px">R${ch.id}</text></g>`;
+  }
+  for(const ch of L.chips)h+=`<g class="comp inter" data-tip="port"><circle class="port" id="pch_${ch.id}" cx="${ch.gw.x}" cy="${ch.gw.y}" r="3"/><text class="pid" x="${ch.gw.x+5}" y="${ch.gw.y-3}">ch ${ch.id}</text></g>`;
+  if(L.topo==='xbar')h+=`<g class="comp inter" data-tip="xbar"><circle class="bar" id="xbar" cx="${L.xbar.x}" cy="${L.xbar.y}" r="26" fill="var(--panel2)" stroke="var(--accent)" stroke-width="2"/><text class="lbl2" x="${L.xbar.x}" y="${L.xbar.y-2}" text-anchor="middle">icnt_chLet</text><text class="lbl" x="${L.xbar.x}" y="${L.xbar.y+11}" text-anchor="middle">crossbar k=${L.n}</text></g>`;
+ }
+ for(const ch of L.chips){
+  h+=`<rect x="${ch.x}" y="${ch.y}" width="${ch.W}" height="${ch.H}" rx="10" fill="var(--panel2)" stroke="${ch.color}" stroke-width="2"/>`;
+  h+=`<text class="lbl2" x="${ch.x+12}" y="${ch.y+18}" fill="${ch.color}" style="fill:${ch.color}">Chiplet ${ch.id}</text>`;
+
+  for(const [j,c] of ch.clusters.entries()){
+   h+=`<path class="wire" d="M${c.port.x},${c.port.y} V${ch.icnt.y-7}"/>`;
+   h+=`<g class="comp intra clport" data-tip="cluster" id="cl_${ch.id}_${j}"><rect x="${c.x-c.w/2}" y="${c.y-14}" width="${c.w}" height="26" rx="4" fill="var(--panel)" stroke="var(--wire)"/><text class="pid" x="${c.x}" y="${c.y+10.5}" text-anchor="middle" style="font-size:8px">${c.gid}</text>`;
+   for(const sm of c.sms)h+=`<g class="comp" data-tip="sm"><rect x="${sm.x-5}" y="${sm.y-9}" width="10" height="10" rx="2" fill="var(--local)" opacity=".75"/></g>`;
+   h+=`</g><g class="comp intra clport" data-tip="port"><circle class="port" id="pcl_${ch.id}_${j}" cx="${c.port.x}" cy="${c.port.y}" r="2.6"/><text class="pid" x="${c.port.x+4}" y="${c.port.y+6}">${c.gid}</text></g>`;
+  }
+  const p0=ch.id*L.clPer, p1=(ch.id+1)*L.clPer-1, q0=L.nClTot+ch.id*L.slicesPer, q1=L.nClTot+(ch.id+1)*L.slicesPer-1;
+  h+=`<g class="comp intra" data-tip="icnt"><rect class="bar" id="bar_${ch.id}" x="${ch.icnt.x1}" y="${ch.icnt.y-7}" width="${ch.icnt.x2-ch.icnt.x1}" height="14" rx="7" fill="var(--panel)" stroke="var(--accent)"/><text class="lbl" x="${ch.icnt.x}" y="${ch.icnt.y+3.5}" text-anchor="middle">icnt</text></g>`;
+
+  for(const [j,p] of ch.slices.entries()){
+   const d=ch.drams[Math.floor(j/L.sp)];
+   h+=`<path class="wire" d="M${p.x},${ch.icnt.y+7} V${p.port.y}"/>`;
+   h+=`<path class="wire" d="M${p.sock.x},${p.sock.y+3} V${p.y+22} L${d.x},${p.y+22} V${d.y-9}"/>`;
+   h+=`<g class="comp intra sliceport" data-tip="port"><circle class="port" id="psl_${ch.id}_${j}" cx="${p.port.x}" cy="${p.port.y}" r="2.6"/><text class="pid" x="${p.port.x+4}" y="${p.port.y-1}">${L.nClTot+p.gid}</text></g>`;
+   h+=`<g class="comp" data-tip="slice" id="sl_${ch.id}_${j}"><rect x="${p.x-10}" y="${p.y-9}" width="20" height="18" rx="3" fill="var(--panel)" stroke="${ch.color}"/><text class="lbl" x="${p.x}" y="${p.y+4}" text-anchor="middle">${j}</text></g>`;
+   h+=`<g class="comp dlink" data-tip="dlink"><rect class="sock" id="dl_${ch.id}_${j}" x="${p.sock.x-3.5}" y="${p.sock.y-3}" width="7" height="6" rx="1"/></g>`;
+  }
+  for(const [j,p] of ch.drams.entries())h+=`<g class="comp" data-tip="dram" id="dr_${ch.id}_${j}"><rect x="${p.x-p.w/2}" y="${p.y-9}" width="${p.w}" height="18" rx="3" fill="var(--panel)" stroke="var(--wire)"/><text class="lbl" x="${p.x}" y="${p.y+4}" text-anchor="middle">DRAM ${j}</text></g>`;
+
+ }
+ h+=`<text class="lbl" x="${L.totalW/2}" y="${L.totalH-6}" text-anchor="middle">icnt_chLet: ${cfg.topo} k=${cfg.k_inter} n=${cfg.n_inter} · icnt: one object, k=${L.nClTot+L.n*L.slicesPer}</text>`;
+ h+=`<text class="lbl" x="${L.totalW/2}" y="${L.totalH+40}" text-anchor="middle" style="display:none">intra network (icnt) is ONE object for the whole GPU: k = ${L.nClTot} cluster ports + ${L.n*L.slicesPer} slice ports = ${L.nClTot+L.n*L.slicesPer}. The dotted link only marks "same object"; remote traffic goes through icnt_chLet.</text>`;
+ h+='<g id="packets"></g>';
+ s.innerHTML=h;
+}
+
+/* ---------- simulation ---------- */
+function freq(i){const f=cfg[DOMS[i].f];return f>0?f:1;}
+function newSim(){
+ sim={t:0,steps:0,next:DOMS.map(()=>0),ticks:DOMS.map(()=>0),reqs:[],log:[],lastTicked:[],id:0,
+  c:{local:0,remote:0,hit:0,miss:0,xpk:0,xhops:0,intra:0,done:0}};
+ glowEv.length=0;
+}
+function newRequest(force){
+ const src=force?force.src:Math.floor(Math.random()*L.n), ch=L.chips[src], cli=force?0:Math.floor(Math.random()*L.clPer), smi=force?0:Math.floor(Math.random()*L.cores);
+ let dst;
+ if(force)dst=force.dst;
+ else if(L.n>1&&Math.random()<ui.remote){dst=Math.floor(Math.random()*(L.n-1)); if(dst>=src)dst++;}
+ else dst=src;
+ const dch=L.chips[dst], sli=force?1:Math.floor(Math.random()*L.slicesPer), dri=Math.floor(sli/L.sp);
+ const remote=dst!==src, hit=force?force.hit:Math.random()<HIT_RATE;
+ if(remote)sim.c.remote++;else sim.c.local++;
+ if(hit)sim.c.hit++;else sim.c.miss++;
+ const cl=ch.clusters[cli], sm=cl.sms[smi], sl=dch.slices[sli], dr=dch.drams[dri];
+ const b1={x:cl.port.x,y:ch.icnt.y}, bs={x:sl.x,y:dch.icnt.y};
+ const hops=[];
+ const route=remote?interRoute(src,dst):[src], xp=L.topo==='xbar'?[ch.gw,L.xbar,dch.gw]:route.map(i=>L.chips[i].rt), nl=L.topo==='xbar'?1:Math.max(1,route.length-1);
+ hops.push({d:'core',t:2,pts:[sm,cl.port],busy:`cl_${src}_${cli}`,lab:`SM 0 → cluster ${cl.gid} port (shared by its SMs)`});
+ hops.push({d:'icnt',t:3,pts:[cl.port,b1],cnt:'intra',lab:`inject at icnt port ${cl.gid}`});
+ if(remote){
+  hops.push({d:'icnt',t:3,pts:[b1,{x:ch.endX,y:ch.icnt.y},ch.gw],lab:`icnt → chiplet ${src} gateway`});
+  hops.push({d:'xbar',t:4*nl,pts:xp,x:true,cnt:'inter',hops:nl,lab:`icnt_chLet: chiplet ${src} → ${dst} (${nl} link${nl>1?'s':''})`});
+  hops.push({d:'icnt',t:3,pts:[dch.gw,{x:dch.endX,y:dch.icnt.y},bs,sl],lab:`chiplet ${dst} gateway → icnt port ${L.nClTot+sl.gid} (slice ${sli})`});
+ }else hops.push({d:'icnt',t:3,pts:[b1,bs,sl],lab:`icnt → port ${L.nClTot+sl.gid} (home slice ${sli})`});
+ hops.push({d:'l2',t:4,pts:[sl,sl],busy:`sl_${dst}_${sli}`,lab:`L2 lookup in slice ${sli}: ${hit?'HIT':'MISS'}`});
+ if(!hit){
+  hops.push({d:'dram',t:4,pts:[sl,dr],lab:`slice ${sli} → DRAM ${dri} (direct link)`});
+  hops.push({d:'dram',t:14,pts:[dr,dr],busy:`dr_${dst}_${dri}`,lab:`DRAM ${dri} access (real: dram_latency 254 DRAM ticks)`});
+  hops.push({d:'l2',t:4,pts:[dr,sl],lab:`DRAM ${dri} → slice ${sli}, fill line`});
+ }
+ if(remote){
+  hops.push({d:'icnt',t:3,pts:[sl,bs,{x:dch.endX,y:dch.icnt.y},dch.gw],reply:true,cnt:'intra',lab:`reply: inject at icnt port ${L.nClTot+sl.gid} → gateway`});
+  hops.push({d:'xbar',t:4*nl,pts:[...xp].reverse(),x:true,reply:true,cnt:'inter',hops:nl,lab:`reply: icnt_chLet chiplet ${dst} → ${src} (${nl} link${nl>1?'s':''})`});
+  hops.push({d:'icnt',t:3,pts:[ch.gw,{x:ch.endX,y:ch.icnt.y},b1],reply:true,lab:`reply: chiplet ${src} gateway → icnt`});
+ }else hops.push({d:'icnt',t:3,pts:[sl,bs,b1],reply:true,cnt:'intra',lab:`reply: inject at icnt port ${L.nClTot+sl.gid} → icnt`});
+ hops.push({d:'icnt',t:3,pts:[b1,cl.port],reply:true,lab:`reply: eject at cluster port ${cl.gid}`});
+ hops.push({d:'core',t:2,pts:[cl.port,sm],reply:true,lab:`cluster port → SM 0, data delivered`});
+ const req={id:sim.id++,remote,hit,hops,hi:0,rem:hops[0].t};
+ if(force){req.trace={kind:force.kind,t0:sim.t,steps0:sim.steps,core0:sim.ticks[0],ticks0:[...sim.ticks],rows:[],cur:{i:0,t0:sim.t}};}
+ sim.reqs.push(req);
+ enterHop(hops[0],req);
+}
+const glowEv=[];
+function enterHop(h,r){ if(r&&r.trace)r.trace.cur={i:r.hi,t0:sim.t};
+ if(h.cnt==='intra')sim.c.intra++; if(h.cnt==='inter'){sim.c.xpk++;sim.c.xhops+=h.hops||1;}
+}
+/* single-request lab */
+const lab={active:false,results:{}};
+const DOMI={core:0,icnt:1,xbar:2,l2:3,dram:4};
+function traceHop(r){const T=r.trace,h=r.hops[T.cur.i];T.rows.push({lab:h.lab,d:h.d,ticks:h.t,ns:h.t*1000/freq(DOMI[h.d]),t0:T.cur.t0,t1:sim.t});T.cur=null;renderLab(r);}
+function traceDone(r){const T=r.trace;T.done=true;T.total=sim.t-T.t0;T.steps=sim.steps-T.steps0;T.core=sim.ticks[0]-T.core0;T.byDom=sim.ticks.map((v,i)=>v-T.ticks0[i]);lab.results[T.kind]=T;ui.playing=false;$('play').textContent='Play';renderLab(r);renderLabCompare();}
+function renderLab(r){
+ const T=r.trace, out=$('labOut');
+ if(T.built!==r.id){ // build the whole table once, one row per known hop
+  T.built=r.id;
+  let h=`<table class="lab"><tr><th>#</th><th>hop</th><th>domain</th><th class="n">ticks</th><th class="n">ns</th><th class="n">sim time at end</th></tr>`;
+  r.hops.forEach((hh,i)=>{h+=`<tr class="pend" data-i="${i}"><td>${i+1}</td><td>${hh.lab}</td><td style="color:${domColor(DOMI[hh.d])}">${DOMS[DOMI[hh.d]].label}</td><td class="n t">0 / ${hh.t}</td><td class="n ns">–</td><td class="n at">–</td></tr>`;});
+  h+=`<tr class="tot"><td></td><td>total</td><td></td><td class="n"></td><td class="n ns">–</td><td class="n at">–</td></tr></table>`;
+  h+=`<p class="hint" style="margin:6px 0 0;min-height:2.8em">ns = ticks × period. "Sim time at end" runs a bit ahead of the sum because a domain is usually partway to its next tick when a hop starts.</p>`;
+  h+=`<div id="labSum" style="margin-top:10px;font-size:13px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px;min-height:70px">${['wall time of the request','core cycles = time ÷ core period','gpu_sim_cycle advanced by (core ticks that happened)','simulator steps run','ticks per domain during the request: core / icnt / chiplet / L2 / DRAM'].map(t=>`<div class="counter"><b>–</b><span>${t}</span></div>`).join('')}</div>`;
+  h+=`<p class="hint" id="labWhy" style="margin-top:8px;min-height:2.8em"></p>`;
+  out.innerHTML=h;
+ }
+ const trs=out.querySelectorAll('tr[data-i]');
+ T.rows.forEach((x,i)=>{const tr=trs[i]; if(tr.classList.contains('pend')){tr.classList.remove('pend');tr.querySelector('.t').textContent=x.ticks;tr.querySelector('.ns').textContent=x.ns.toFixed(2);tr.querySelector('.at').textContent=(x.t1-T.t0).toFixed(2);}});
+ trs.forEach(tr=>tr.classList.remove('now'));
+ if(T.cur&&!T.done){const tr=trs[T.cur.i];tr.classList.add('now');const hh=r.hops[T.cur.i];tr.querySelector('.t').textContent=`${hh.t-r.rem} / ${hh.t}`;}
+ if(T.done&&!T.shown){
+  T.shown=true;
+  const sum=T.rows.reduce((a,x)=>a+x.ns,0), tot=out.querySelector('tr.tot');
+  tot.querySelector('.ns').textContent=sum.toFixed(2); tot.querySelector('.at').textContent=T.total.toFixed(2);
+  const pc=1000/freq(0), S=out.querySelectorAll('#labSum b');
+  S[0].textContent=T.total.toFixed(2)+' ns'; S[1].textContent=(T.total/pc).toFixed(2)+' (period '+pc.toFixed(3)+' ns)'; S[2].textContent=T.core; S[3].textContent=T.steps+' ('+(T.steps/Math.max(1,T.core)).toFixed(2)+' per core cycle)';
+  S[4].innerHTML=T.byDom.map((v,i)=>`<span style="color:${domColor(i)}">${v}</span>`).join(' / ');
+  $('labWhy').textContent=`${T.rows.filter(x=>x.d==='dram').reduce((a,x)=>a+x.ticks,0)} DRAM ticks, ${T.rows.filter(x=>x.d==='xbar').reduce((a,x)=>a+x.ticks,0)} chiplet-network ticks. Raise the DRAM clock: same DRAM ticks, fewer ns, fewer core cycles, nothing changed on the core.`;
+ }
+}
+function renderLabCompare(){
+ const kinds=['local-hit','local-miss','remote-hit','remote-miss'];
+ const pc=1000/freq(0);
+ let h=`<table class="lab"><tr><th>request</th><th class="n">hops</th><th class="n">ns</th><th class="n">core cycles</th><th class="n">chiplet-net ticks</th><th class="n">DRAM ticks</th><th class="n">sim steps</th></tr>`;
+ for(const k of kinds){const T=lab.results[k];const n=T?T.rows.length:'–';h+=`<tr><td>${k.replace('-',', L2 ')}</td><td class="n">${n}</td><td class="n">${T?T.total.toFixed(2):'–'}</td><td class="n">${T?(T.total/pc).toFixed(2):'–'}</td><td class="n">${T?T.rows.filter(x=>x.d==='xbar').reduce((a,x)=>a+x.ticks,0):'–'}</td><td class="n">${T?T.rows.filter(x=>x.d==='dram').reduce((a,x)=>a+x.ticks,0):'–'}</td><td class="n">${T?T.steps:'–'}</td></tr>`;}
+ h+='</table>';
+ const lh=lab.results['local-hit'],rh=lab.results['remote-hit'];
+ h+=`<p class="hint" style="margin-top:6px;min-height:1.4em">${lh&&rh?`Remote hit minus local hit = ${(rh.total-lh.total).toFixed(2)} ns: the pure cost of the L2 being on another chiplet, paid even though the data was in cache.`:'Run a local hit and a remote hit to see the pure chiplet-crossing cost.'}</p>`;
+ $('labCompare').innerHTML=h;
+ if(Object.keys(lab.results).length)$('labCompareWrap').style.display='';
+}
+function startLab(kind){
+ if(L.n<2&&kind.startsWith('remote')){$('labOut').textContent='Need at least 2 chiplets for a remote request.';return;}
+ lab.active=true; $('labExit').style.display=''; $('labPanel').style.display='';
+ sim.reqs=[]; for(const id of busySet){const e=$(id);if(e)e.classList.remove('busy');} busySet.clear();
+ const remote=kind.startsWith('remote'), hit=kind.endsWith('hit');
+ newRequest({src:0,dst:remote?1:0,hit,kind});
+ ui.playing=true; $('play').textContent='Pause';
+ renderLab(sim.reqs[sim.reqs.length-1]);
+}
+document.querySelectorAll('[data-lab]').forEach(b=>b.addEventListener('click',()=>startLab(b.dataset.lab)));
+$('labExit').addEventListener('click',()=>{lab.active=false;$('labExit').style.display='none';$('labOut').innerHTML='<span class="hint">Normal traffic resumed. Pick one above to trace again.</span>';ui.playing=true;$('play').textContent='Pause';});
+
+/* focus buttons: hover pauses the sim and highlights one class of connection points */
+const FOCUS=[
+ ['intra','Intra-network ports (k = 64)','all 64 BookSim ports of the one GPU-wide icnt: 32 cluster ports + 32 slice ports'],
+ ['clport','Cluster ports (0–31)','one per cluster, shared by its SMs'],
+ ['sliceport','Slice ports (32–63)','one per L2 slice: n_clusters + slice id'],
+ ['inter','Inter-chiplet ports (k = 4)','the crossbar icnt_chLet and its one port per chiplet'],
+ ['dlink','Slice → DRAM links','direct links, no port, not counted in k']];
+let wasPlaying=null, pinned=null;
+function setFocus(cls){
+ const svg=$('gpu');
+ svg.querySelectorAll('.focus').forEach(e=>e.classList.remove('focus'));
+ if(!cls){svg.classList.remove('dim'); if(wasPlaying!==null){ui.playing=wasPlaying;$('play').textContent=ui.playing?'Pause':'Play';wasPlaying=null;} $('focusNote').textContent=''; return;}
+ if(wasPlaying===null){wasPlaying=ui.playing;ui.playing=false;$('play').textContent='Play';}
+ svg.classList.add('dim');
+ svg.querySelectorAll('.'+cls).forEach(e=>e.classList.add('focus'));
+ const f=FOCUS.find(x=>x[0]===cls); $('focusNote').textContent=f?f[2]+'. Count the lit points: '+svg.querySelectorAll('.'+cls+' .port, .'+cls+' .sock').length:'';
+}
+function buildFocusBar(){
+ const host=$('focusbar'); host.innerHTML='<span>Pause and highlight:</span>';
+ for(const [cls,label] of FOCUS){
+  const b=document.createElement('button'); b.textContent=label; b.dataset.cls=cls;
+  b.addEventListener('mouseenter',()=>{if(!pinned)setFocus(cls);});
+  b.addEventListener('mouseleave',()=>{if(!pinned)setFocus(null);});
+  b.addEventListener('focus',()=>{if(!pinned)setFocus(cls);});
+  b.addEventListener('blur',()=>{if(!pinned)setFocus(null);});
+  b.addEventListener('click',()=>{ if(pinned===cls){pinned=null;b.classList.remove('on');setFocus(null);} else {host.querySelectorAll('button').forEach(x=>x.classList.remove('on'));pinned=cls;b.classList.add('on');setFocus(cls);} });
+  host.appendChild(b);
+ }
+ const n=document.createElement('span');n.id='focusNote';host.appendChild(n);
+}
+function tickDomain(key){
+ if(key==='core'&&!lab.active&&Math.random()<ui.rate&&sim.reqs.length<MAX_INFLIGHT)newRequest();
+ for(let i=sim.reqs.length-1;i>=0;i--){
+  const r=sim.reqs[i], h=r.hops[r.hi]; if(h.d!==key)continue;
+  r.rem--;
+  if(r.rem<=0){ if(r.trace)traceHop(r); r.hi++; if(r.hi>=r.hops.length){sim.reqs.splice(i,1);sim.c.done++; if(r.trace)traceDone(r);} else {r.rem=r.hops[r.hi].t; enterHop(r.hops[r.hi],r);} }
+ }
+}
+function step(){
+ const t=Math.min(...sim.next); const ticked=[];
+ DOMS.forEach((d,i)=>{ if(Math.abs(sim.next[i]-t)<1e-9){ ticked.push(i); sim.ticks[i]++; sim.next[i]=t+1000/freq(i); } });
+ sim.t=t; sim.steps++; sim.lastTicked=ticked;
+ for(const i of ticked)tickDomain(DOMS[i].key);
+ sim.log.push({t,ticked}); if(sim.log.length>400)sim.log.shift();
+ dirty=true;
+}
+
+/* ---------- rendering ---------- */
+let dirty=true;
+function lerpPath(pts,p){
+ let len=0;const seg=[];for(let i=1;i<pts.length;i++){const d=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y);seg.push(d);len+=d;}
+ if(len===0)return pts[0];
+ let d=p*len;for(let i=0;i<seg.length;i++){if(d<=seg[i]){const u=seg[i]?d/seg[i]:0;return {x:pts[i].x+(pts[i+1].x-pts[i].x)*u,y:pts[i].y+(pts[i+1].y-pts[i].y)*u};}d-=seg[i];}
+ return pts[pts.length-1];
+}
+const busySet=new Set();
+function renderPackets(){
+ const g=$('packets'); if(!g)return; let h=''; const nowBusy=new Set();
+ for(const r of sim.reqs){
+  const hp=r.hops[r.hi]; const p=1-r.rem/hp.t; const pos=lerpPath(hp.pts,p);
+  const col=r.remote?'var(--remote)':'var(--local)';
+  if(hp.busy){nowBusy.add(hp.busy);h+=`<circle cx="${pos.x}" cy="${pos.y}" r="8" fill="none" stroke="${col}" stroke-width="2" opacity=".8"/>`;}
+  else h+=hp.reply?`<circle cx="${pos.x}" cy="${pos.y}" r="5" fill="var(--panel)" stroke="${col}" stroke-width="2.5"/>`:`<circle cx="${pos.x}" cy="${pos.y}" r="5.5" fill="${col}"/>`;
+ }
+ g.innerHTML=h;
+ for(const id of busySet)if(!nowBusy.has(id)){const e=$(id);if(e)e.classList.remove('busy');}
+ for(const id of nowBusy)if(!busySet.has(id)){const e=$(id);if(e)e.classList.add('busy');}
+ busySet.clear();for(const id of nowBusy)busySet.add(id);
+}
+function renderCounters(){
+ const c=sim.c, tot=c.local+c.remote;
+ const rows=[
+  ['local','Local requests',c.local,tot?Math.round(100*c.local/tot)+'%':''],
+  ['remote','Remote requests',c.remote,tot?Math.round(100*c.remote/tot)+'%':''],
+  ['','Intra-network injections (icnt)',c.intra,'cluster/slice port → crossbar, k=64 ports'],
+  ['remote','Inter-chiplet crossings (icnt_chLet)',c.xpk,`avg ${c.xpk?(c.xhops/c.xpk).toFixed(2):'–'} link hops each (crossbar = 1)`],
+  ['','L2 hits / misses',`${c.hit} / ${c.miss}`,'fixed 60% hit rate'],
+  ['','In flight',sim.reqs.length,'completed: '+c.done],
+  ['','gpu_sim_cycle',sim.ticks[0],'core ticks only'],
+  ['','Simulator steps',sim.steps,`${sim.ticks[0]?(sim.steps/sim.ticks[0]).toFixed(2):'–'} per core cycle`],
+  ['','Simulated time',sim.t.toFixed(2)+' ns','']
+ ];
+ const host=$('counters');
+ if(host.children.length!==rows.length)host.innerHTML=rows.map(([cl])=>`<div class="counter ${cl}"><b></b><span></span></div>`).join('');
+ rows.forEach(([cl,l,v,s],i)=>{const d=host.children[i];const b=d.firstChild,sp=d.lastChild;const vs=String(v),ls=l+(s?' · '+s:'');if(b.textContent!==vs)b.textContent=vs;if(sp.textContent!==ls)sp.textContent=ls;});
+}
+function renderClocks(){
+ const host=$('clockCards');
+ if(host.children.length!==DOMS.length)host.innerHTML=DOMS.map((d,i)=>`<div class="clock" style="border-left-color:${domColor(i)}"><b>${d.label}</b><small></small><small></small><small></small></div>`).join('');
+ DOMS.forEach((d,i)=>{const el=host.children[i];el.classList.toggle('hit',sim.lastTicked.includes(i));const sm=el.querySelectorAll('small');
+  const a=`${freq(i)} MHz · period ${(1000/freq(i)).toFixed(3)} ns`, b=`ticks: ${sim.ticks[i]}`, c=`next: ${sim.next[i].toFixed(3)} ns`;
+  if(sm[0].textContent!==a)sm[0].textContent=a; if(sm[1].textContent!==b)sm[1].textContent=b; if(sm[2].textContent!==c)sm[2].textContent=c;});
+}
+function domColor(i){return ['var(--local)','var(--accent)','var(--remote)','#2bb673','#d8508f'][i];}
+function renderTimeline(){
+ const s=$('timeline'); const W=700,H=120, laneH=18, top=14;
+ const win=3*1000/freq(0); const t1=sim.t, t0=t1-win;
+ let h=`<text x="4" y="${H-4}" font-size="10" fill="var(--muted)">← earlier (window = 3 core cycles)</text><text x="${W-4}" y="${H-4}" font-size="10" fill="var(--muted)" text-anchor="end">now →</text>`;
+ DOMS.forEach((d,i)=>{const y=top+i*laneH;h+=`<line x1="0" x2="${W}" y1="${y+laneH/2}" y2="${y+laneH/2}" stroke="var(--line)"/><text x="4" y="${y+laneH/2+3.5}" font-size="10" fill="${domColor(i)}">${d.label}</text>`;});
+ let count=0;
+ for(const e of sim.log){
+  if(e.t<t0-1e-9)continue; const x=((e.t-t0)/win)*W; count++;
+  h+=`<line x1="${x}" x2="${x}" y1="${top}" y2="${top+5*laneH}" stroke="var(--line)" opacity=".6"/>`;
+  for(const i of e.ticked){const y=top+i*laneH;h+=`<rect x="${x-1.5}" y="${y+3}" width="3" height="${laneH-6}" fill="${domColor(i)}"/>`;}
+ }
+ s.innerHTML=h;
+ $('tlNote').textContent=`${count} steps in this window. Each vertical line is one step; a bar means that domain ticked. Same-frequency domains tick together.`;
+}
+function renderAll(){renderPackets(); if(dirty&&lab.active){const tr=sim.reqs.find(x=>x.trace&&!x.trace.done); if(tr)renderLab(tr);}if(dirty){renderCounters();renderClocks();renderTimeline();dirty=false;}}
+
+/* ---------- loop ---------- */
+let last=performance.now(),acc=0;
+function frame(now){
+ const dt=Math.min(0.1,(now-last)/1000); last=now;
+ if(ui.playing){acc+=dt*ui.speed;let n=Math.min(60,Math.floor(acc));acc-=n;while(n-->0)step();}
+ renderAll(); requestAnimationFrame(frame);
+}
+function rebuild(){
+ L=layout(cfg); drawGPU(); if(pinned)setFocus(pinned); newSim(); dirty=true; renderAll();
+}
+
+/* ---------- controls ---------- */
+function speedFromSlider(v){return Math.round(Math.pow(10,v/100*2.7));}
+$('speed').addEventListener('input',e=>{ui.speed=speedFromSlider(+e.target.value);$('speedOut').textContent=ui.speed+' st/s';});
+$('rate').addEventListener('input',e=>{ui.rate=+e.target.value/100;$('rateOut').textContent=e.target.value+'%';});
+$('remote').addEventListener('input',e=>{ui.remote=+e.target.value/100;$('remoteOut').textContent=e.target.value+'%';});
+$('play').addEventListener('click',()=>{ui.playing=!ui.playing;$('play').textContent=ui.playing?'Pause':'Play';});
+$('stepBtn').addEventListener('click',()=>{ui.playing=false;$('play').textContent='Play';step();});
+$('reset').addEventListener('click',()=>{newSim();dirty=true;});
+$('defaults').addEventListener('click',()=>{cfg={...DEF};buildCfgPanel();renderValidation();rebuild();});
+
+/* tooltips */
+const tip=$('tip');
+document.addEventListener('click',e=>{
+ const c=e.target.closest('.comp');
+ if(!c){ if(!e.target.closest('#tip'))tip.style.display='none'; return; }
+ const k=c.dataset.tip, T=TIPS[k]; if(!T)return;
+ let extra='';
+ if(k==='icnt')extra=` Current need: ${cfg.n_clusters} + ${cfg.n_mem}×${cfg.subp} = ${cfg.n_clusters+cfg.n_mem*cfg.subp}; configured k = ${cfg.k_intra}.`;
+ if(k==='xbar')extra=` Configured k = ${cfg.k_inter}; chiplets = ${cfg.n_chiplets}.`;
+ tip.innerHTML=`<button id="tipclose" aria-label="close">×</button><h4>${T.t}</h4><code>${T.c}</code>${T.d}${extra}`;
+ tip.style.display='block';
+ const x=Math.min(e.clientX+12,window.innerWidth-320), y=Math.min(e.clientY+12,window.innerHeight-170);
+ tip.style.left=x+'px';tip.style.top=y+'px';
+ $('tipclose').onclick=()=>tip.style.display='none';
+});
+
+/* explanation toggles */
+document.querySelectorAll('.panel').forEach(pn=>{
+ if(!pn.querySelector(':scope > .hint'))return;
+ const h2=pn.querySelector('h2'); const b=document.createElement('button'); b.className='eye'; b.title='Show explanation'; b.textContent='👁'; b.setAttribute('aria-label','Toggle explanation');
+ b.addEventListener('click',e=>{e.stopPropagation();pn.classList.toggle('show');});
+ h2.appendChild(b);
+});
+$('eyeAll').addEventListener('click',()=>{const on=!document.body.classList.contains('allhints');document.body.classList.toggle('allhints',on);document.querySelectorAll('.panel').forEach(pn=>pn.classList.toggle('show',on));});
+/* init */
+buildCfgPanel(); renderValidation(); buildFocusBar(); renderLabCompare();
+ui.speed=speedFromSlider(55);$('speedOut').textContent=ui.speed+' st/s';$('rateOut').textContent='40%';$('remoteOut').textContent='30%';
+rebuild();
+for(let i=0;i<40;i++)step();
+ui.playing=true;$('play').textContent='Pause';
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
